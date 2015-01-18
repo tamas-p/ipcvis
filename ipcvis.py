@@ -1,6 +1,6 @@
 #! /usr/bin/env python
 '''ipcvis - visualize inter-process communication. Small script that is able to create
-graph of verious IPC communication channels between process together with process hierarchy'''
+graph of verious IPC communication channels between processes, together with their process hierarchy'''
 
 #--------------------------------------------------------------------------------
 # ipcvis- visualize inter-process communication
