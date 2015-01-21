@@ -71,6 +71,10 @@ def cmdparser():
 
     return parser.parse_args()
 
+def print_stderr(msg):
+    '''Print out to stderr'''
+    sys.stderr.write(msg + '\n')
+
 #-------------------------------------------------------------------------------
 
 class Recorder(object):
@@ -135,7 +139,7 @@ class Recorder(object):
         try:
             self.outf = open(self.file_name, 'w')
         except IOError as exception:
-            sys.stderr.write("I/O error({0}): {1} - {2}\n".format(exception.errno, self.file_name, exception.strerror))
+            print_stderr("I/O error({0}): {1} - {2}".format(exception.errno, self.file_name, exception.strerror))
             exit(1)
 
         self.outf.write(str(self.mypid))
@@ -164,7 +168,7 @@ class Recorder(object):
         try:
             inf = open(self.file_name, 'r')
         except IOError as exception:
-            sys.stderr.write("I/O error({0}): {1} - {2}\n".format(exception.errno, self.file_name, exception.strerror))
+            print_stderr("I/O error({0}): {1} - {2}".format(exception.errno, self.file_name, exception.strerror))
             exit(1)
 
         # first is used as a flag to find the 1st line in the file that
@@ -492,7 +496,7 @@ class Graph(object):
         try:
             self.mygraph.draw(file_name, prog="dot")
         except IOError as exception:
-            sys.stderr.write(str(exception))
+            print_stderr(str(exception))
             exit(1)
 
         sys.stdout.write(file_name + ' is created.\n')
@@ -619,7 +623,7 @@ def main():
 
     args = cmdparser()
     if args.version:
-        sys.stderr.write('ipcvis v0.1\n')
+        print_stderr('ipcvis v0.1')
         exit(0)
 
     recorder = Recorder(args.file)
@@ -645,7 +649,7 @@ def main():
             graph.visualize()
             graph.write(args.out)
         else:
-            sys.stderr.write('Should not get here...\n')
+            print_stderr('Should not get here...')
             exit(1)
 
 #--------------------------------------------------------------------------------
