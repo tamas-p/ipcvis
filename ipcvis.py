@@ -520,7 +520,13 @@ def gen_data(inputstr, local_pos, peer_pos, users_pos):
         if len(line_array) > users_pos:
             users = line_array[users_pos]
             u_a = users.split(',')
-            local_pid = u_a[1][4:]
+
+            if u_a[1][0] == 'p':
+                pidpos = 4  # Ubuntu
+            else:
+                pidpos = 0  # Debian
+
+            local_pid = u_a[1][pidpos:]
             n_a = u_a[0].split("((")
             local_name = n_a[1]
         else:
