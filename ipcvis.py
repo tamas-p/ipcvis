@@ -30,9 +30,24 @@ import pygraphviz as gv
 
 from collections import namedtuple
 
+logging.basicConfig()
+LOG = logging.getLogger('ipcvis')
+#LOG.setLevel(logging.DEBUG)
+
 #--------------------------------------------------------------------------------
 
 ProcessRecord = namedtuple('ProcessRecord', 'process_name pid ppid')
+
+PROCESS_PID = 'p'
+PROCESS_LOGIN_NAME = 'L'
+PROCESS_USER_ID = 'u'
+PROCESS_NAME = 'c'
+
+PROTOCOL_NAME = 'P'
+FILE_TYPE = 't'
+FILE_DESCRIPTOR = 'f'
+INODE_NUMBER = 'i'
+FILE_NAME = 'n'
 
 #-------------------------------------------------------------------------------
 # Utilities
@@ -87,7 +102,7 @@ class Recorder(object):
 
     STATE_ID_SECTION = 'state_id'
     STATE_NAME_SECTION = 'state_name'
-    PIPE_SECTION = 'pipe'
+    FILE_SECTION = 'file'
     UNIX_SECTION = 'unix'
     TCP_SECTION = 'tcp'
     PS_SECTION = 'ps'
@@ -95,7 +110,7 @@ class Recorder(object):
     UNIX_CMD = "ss state established -n -xp  -o | sed -e '1d' | sed -e 's/\"//g'"
     TCP_CMD = "ss state established -n -tp  -o | sed -e '1d' | sed -e 's/\"//g' | sed -e 's/timer:([^)]*)//'"
     PS_CMD = "ps --no-headers -e -o pid,ppid,comm"
-    PIPE_CMD = "lsof -n | grep FIFO"
+    FILE_CMD = "lsof -n -P -FLuPtfinc0"
 
     def __init__(self, fn):
         self.file_name = fn
@@ -108,7 +123,7 @@ class Recorder(object):
 
     def record(self):
         '''Builds list that includes output of commands for each iteration.
-        list = [ State(state_name, pipe_out, unix_out, tcp_out, ps_out), ... ]
+        list = [ State(state_name, file_out, unix_out, tcp_out, ps_out), ... ]
         '''
         state_name = '-initial-'
 
@@ -121,7 +136,7 @@ class Recorder(object):
 
             state[self.STATE_ID_SECTION] = str(iteration)
             state[self.STATE_NAME_SECTION] = state_name
-            state[self.PIPE_SECTION] = get_stdout(self.PIPE_CMD)
+            state[self.FILE_SECTION] = get_stdout(self.FILE_CMD)
             state[self.UNIX_SECTION] = get_stdout(self.UNIX_CMD)
             state[self.TCP_SECTION] = get_stdout(self.TCP_CMD)
             state[self.PS_SECTION] = get_stdout(self.PS_CMD)
@@ -148,7 +163,7 @@ class Recorder(object):
         for i in range(len(self.store)):
             self.write_section(i, self.STATE_ID_SECTION, self.store[i][self.STATE_ID_SECTION])
             self.write_section(i, self.STATE_NAME_SECTION, self.store[i][self.STATE_NAME_SECTION])
-            self.write_section(i, self.PIPE_SECTION, self.store[i][self.PIPE_SECTION])
+            self.write_section(i, self.FILE_SECTION, self.store[i][self.FILE_SECTION])
             self.write_section(i, self.UNIX_SECTION, self.store[i][self.UNIX_SECTION])
             self.write_section(i, self.TCP_SECTION, self.store[i][self.TCP_SECTION])
             self.write_section(i, self.PS_SECTION, self.store[i][self.PS_SECTION])
@@ -209,6 +224,8 @@ class Recorder(object):
 class Graph(object):
     '''Create graph'''
 
+    inodes = {} # inodes[inode] = filename
+
     mygraph = None
 
     processes = None
@@ -231,7 +248,7 @@ class Graph(object):
     </TR>
 
     <TR>
-        <TD>Pipe</TD>
+        <TD>File</TD>
         <TD ALIGN="left" ><FONT COLOR="green">green line</FONT></TD>
     </TR>
 
@@ -257,7 +274,7 @@ class Graph(object):
         '''This function visualize the store.'''
 
         for i in range(1, len(self.recorder.store), 1):
-            logging.debug(self.recorder.store[i][Recorder.STATE_NAME_SECTION])
+            LOG.debug(self.recorder.store[i][Recorder.STATE_NAME_SECTION])
 
             previous = self.recorder.store[i - 1]
             now = self.recorder.store[i]
@@ -265,7 +282,7 @@ class Graph(object):
             state_id = now[Recorder.STATE_ID_SECTION].strip()
 
             self.ps_graph(previous[Recorder.PS_SECTION], now[Recorder.PS_SECTION], state_id)
-            self.pipe_graph(previous[Recorder.PIPE_SECTION], now[Recorder.PIPE_SECTION], state_id)
+            self.file_graph(previous[Recorder.FILE_SECTION], now[Recorder.FILE_SECTION], state_id)
             self.unix_graph(previous[Recorder.UNIX_SECTION], now[Recorder.UNIX_SECTION], state_id)
             self.tcp_graph(previous[Recorder.TCP_SECTION], now[Recorder.TCP_SECTION], state_id)
 
@@ -289,7 +306,7 @@ class Graph(object):
 
         data = self.diff(old_processes, self.processes)
 
-        logging.debug(self.processes)
+        LOG.debug(self.processes)
 
         # Print edges
         for value in data.values():
@@ -297,11 +314,11 @@ class Graph(object):
 
         return self.processes
 
-    def pipe_graph(self, before, after, state_id):
-        '''Pipe graph generation'''
+    def file_graph(self, before, after, state_id):
+        '''File graph generation'''
 
-        raw = dict_diff(gen_pipe_data(self.processes, before), gen_pipe_data(self.processes, after))
-        data = self.filter_pipes(raw)
+        raw = dict_diff(self.gen_file_data(self.processes, before), self.gen_file_data(self.processes, after))
+        data = self.filter_files(raw)
 
         # Add edges
         for key, value in data.items():
@@ -310,7 +327,7 @@ class Graph(object):
             # We only draw edges between processes
             if len(set_value) > 1:
                 for process in set(value):
-                    self.add_pipe_edge(key, process, state_id)
+                    self.add_file_edge(key, process, state_id)
 
     def unix_graph(self, before, after, state_id):
         '''Generate unix graph'''
@@ -335,7 +352,7 @@ class Graph(object):
 
             # Filter out unix sockets to the very same process
             if process1.pid != process2.pid:
-                logging.debug("    " + process1.pid + " -> " + process2.pid + " [label=\"(" + state_id + ")\"]" + "\n")
+                LOG.debug("    " + process1.pid + " -> " + process2.pid + " [label=\"(" + state_id + ")\"]" + "\n")
                 self.add_unix_edge(process1, process2, state_id)
 
 
@@ -390,27 +407,27 @@ class Graph(object):
 
         return self.check_parent(ppid)
 
-    def filter_pipes(self, pipes):
-        '''Filter out any pipe that is connected directly or indirectly with the
+    def filter_files(self, files):
+        '''Filter out any file that is connected directly or indirectly with the
         recorder python process'''
 
         inodes_to_be_deleted = []
-        cpy = pipes.copy() # To have all inodes as we will remove elements from pipes
+        cpy = files.copy() # To have all inodes as we will remove elements from files
 
         for inode in cpy.keys():
 
-            process_record_list = pipes[inode]
+            process_record_list = files[inode]
 
             for process_record in process_record_list:
                 if process_record.pid == self.recorder.mypid:
                     inodes_to_be_deleted.append(inode)
-                    self.check_pipe(pipes, process_record.pid, inode, inodes_to_be_deleted)
+                    self.check_file(files, process_record.pid, inode, inodes_to_be_deleted)
 
         for inode in inodes_to_be_deleted:
-            logging.debug("deleting -----" + ' ' + inode + ' ' + str(pipes[inode]))
-            del pipes[inode]
+            LOG.debug("deleting -----" + ' ' + inode + ' ' + str(files[inode]))
+            del files[inode]
 
-        return pipes
+        return files
 
     #  {inode4}[ ProcessRecord(process_name4, pid4, ppid4), ProcessRecord(spvis, mypid !!!, ppid2), ... ]
     #                                          ^
@@ -425,10 +442,10 @@ class Graph(object):
     #                                          |
     #                                          V
     #  {inode2}[ ProcessRecord(process_name1, pid1, ppid1), ProcessRecord(process_name3, pid3, ppid3), ... ]
-    def check_pipe(self, data, from_pid, inode, inodes_to_be_deleted):
-        '''Check pipe'''
+    def check_file(self, data, from_pid, inode, inodes_to_be_deleted):
+        '''Check file'''
 
-        logging.debug("#>" + ' ' + inode + ' ' + str(data[inode]))
+        LOG.debug("#>" + ' ' + inode + ' ' + str(data[inode]))
 
         process_record_list = data[inode]
         for process_record in process_record_list:
@@ -438,17 +455,19 @@ class Graph(object):
             for i in data.keys():
                 if process_record in data[i] and not i in inodes_to_be_deleted:
                     inodes_to_be_deleted.append(i)
-                    self.check_pipe(data, process_record.pid, i, inodes_to_be_deleted)
+                    self.check_file(data, process_record.pid, i, inodes_to_be_deleted)
 
-    def add_pipe_edge(self, key, process, state_id):
-        '''Add pipe edge to graph'''
+    def add_file_edge(self, key, process, state_id):
+        '''Add file edge to graph'''
+
+        #assert not '127.0.0' in key
 
         self.mygraph.add_edge(key, process.pid)
         edge = self.mygraph.get_edge(key, process.pid)
         edge.attr.update(label="(" + state_id + ")", dir='none', color='green')
 
         node1 = self.mygraph.get_node(key)
-        node1.attr.update(label='inode' + "\\n" + key, fontsize='8', width='0.01', height='0.01', shape='note')
+        node1.attr.update(label='File' + "\\n" + str(self.inodes[key]), fontsize='8', width='0.01', height='0.01', shape='note')
 
         node2 = self.mygraph.get_node(process.pid)
         node2.attr.update(label=process.process_name + "\\n" + 'pid=' + process.pid)
@@ -500,6 +519,52 @@ class Graph(object):
             exit(1)
 
         sys.stdout.write(file_name + ' is created.\n')
+
+    def gen_file_data(self, fulllist, mystr):
+        '''Generate file data'''
+
+        data = {} # data[inode] = [ ProcessRecord(process_name, pid, ppid) ]
+
+        lines = mystr.split('\n')
+        for line in lines:
+            fields = line.strip('\x00').split('\x00')
+            field_map = {}
+            for field in fields:
+                if len(field) < 2:
+                    continue
+                field_map[field[0]] = field[1:]
+
+            if len(field_map) > 0:
+
+                if PROCESS_PID in field_map:
+                    # Just remember we will see from here files for a new process
+                    process_map = field_map
+
+                    # lsof gives back the thread name instead of the command name
+                    # let's fix that by looking up the command name from ps list
+                    pid = process_map[PROCESS_PID]
+                    if fulllist.has_key(pid):
+                        process = ProcessRecord(fulllist[pid].process_name, pid, None)
+                    else:
+                        process = ProcessRecord(process_map[PROCESS_NAME], pid, None)
+
+                else:
+
+                    if (
+                            'IP' in field_map[FILE_TYPE] or
+                            'unix' in field_map[FILE_TYPE] or
+                            field_map[FILE_NAME].endswith('.so') or
+                            not INODE_NUMBER in field_map
+                        ):
+                        continue
+
+                    self.inodes[field_map[INODE_NUMBER]] = field_map
+                    if not field_map[INODE_NUMBER] in data:
+                        data[field_map[INODE_NUMBER]] = []
+
+                    data[field_map[INODE_NUMBER]].append(process)
+
+        return data
 
 #--------------------------------------------------------------------------------
 
@@ -579,39 +644,6 @@ def gen_ps_data(mystr):
 
 #--------------------------------------------------------------------------------
 
-def gen_pipe_data(fulllist, mystr):
-    '''Generate pipe data'''
-
-    data = {} # data[inode] = [ ProcessRecord(process_name, pid, ppid) ]
-    for line in mystr.splitlines():
-        line_array = line.split()
-        if len(line_array) < 1:
-            continue
-
-        process_name = line_array[0]
-        pid = line_array[1]
-        #ppid   = line_array[2] 2 is Task ID, for PPID we have to use -R for lsof
-
-        alength = len(line_array)
-        assert alength == 10 or alength == 9
-        inode = line_array[8 if (alength == 10) else 7]
-
-        if not inode in data:
-            data[inode] = []
-
-        # lsof gives back the thread name instead of the command name
-        # let's fix that by looking up the command name from ps list
-        if fulllist.has_key(pid):
-            process = ProcessRecord(fulllist[pid].process_name, pid, None)
-        else:
-            process = ProcessRecord(process_name, pid, None)
-
-        data[inode].append(process)
-
-    return data
-
-#--------------------------------------------------------------------------------
-
 def dict_diff(old, new):
     '''Dictionary diff'''
 
@@ -629,7 +661,7 @@ def main():
 
     args = cmdparser()
     if args.version:
-        print_stderr('ipcvis v0.1')
+        print_stderr('ipcvis v0.2')
         exit(0)
 
     recorder = Recorder(args.file)
