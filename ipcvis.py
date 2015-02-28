@@ -553,6 +553,7 @@ class Graph(object):
                     if (
                             'IP' in field_map[FILE_TYPE] or
                             'unix' in field_map[FILE_TYPE] or
+                            'REG' in field_map[FILE_TYPE] or
                             field_map[FILE_NAME].endswith('.so') or
                             not INODE_NUMBER in field_map
                         ):
