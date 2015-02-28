@@ -49,6 +49,8 @@ FILE_DESCRIPTOR = 'f'
 INODE_NUMBER = 'i'
 FILE_NAME = 'n'
 
+SHMEM_FILENAME = '/SYSV'
+
 #-------------------------------------------------------------------------------
 # Utilities
 #-------------------------------------------------------------------------------
@@ -248,8 +250,13 @@ class Graph(object):
     </TR>
 
     <TR>
-        <TD>File</TD>
+        <TD>Pipe</TD>
         <TD ALIGN="left" ><FONT COLOR="green">green line</FONT></TD>
+    </TR>
+
+    <TR>
+        <TD>Shared memory</TD>
+        <TD ALIGN="left" ><FONT COLOR="purple">purple line</FONT></TD>
     </TR>
 
     <TR>
@@ -464,7 +471,10 @@ class Graph(object):
 
         self.mygraph.add_edge(key, process.pid)
         edge = self.mygraph.get_edge(key, process.pid)
-        edge.attr.update(label="(" + state_id + ")", dir='none', color='green')
+        if self.inodes[key][FILE_NAME].startswith(SHMEM_FILENAME):
+            edge.attr.update(label="(" + state_id + ")", dir='none', color='purple')
+        else:
+            edge.attr.update(label="(" + state_id + ")", dir='none', color='green')
 
         node1 = self.mygraph.get_node(key)
         node1.attr.update(label='File' + "\\n" + str(self.inodes[key]), fontsize='8', width='0.01', height='0.01', shape='note')
@@ -553,7 +563,8 @@ class Graph(object):
                     if (
                             'IP' in field_map[FILE_TYPE] or
                             'unix' in field_map[FILE_TYPE] or
-                            'REG' in field_map[FILE_TYPE] or
+                            # /SYSV indicates shared memory we want to show
+                            ('REG' in field_map[FILE_TYPE] and not field_map[FILE_NAME].startswith(SHMEM_FILENAME)) or
                             field_map[FILE_NAME].endswith('.so') or
                             not INODE_NUMBER in field_map
                         ):
