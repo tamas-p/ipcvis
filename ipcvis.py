@@ -583,6 +583,14 @@ def gen_data(inputstr, local_pos, peer_pos, users_pos):
         local_addr = line_array[local_pos]
         peer_addr = line_array[peer_pos]
 
+        # If server side created a IPv6 server socket but the client connected with an IPv4 socket then
+        # in ss command output for the server socket ::ffff:a.b.c.d:port, while for the client a.b.c.d:port
+        # will be indicated. In order to be able to match them we shall remove the '::ffff:' prefix:
+        if local_addr.startswith('::ffff:'):
+            local_addr = local_addr[7:]
+        if peer_addr.startswith('::ffff:'):
+            peer_addr = peer_addr[7:]
+
         if len(line_array) > users_pos:
             users = line_array[users_pos]
             u_a = users.split(',')
