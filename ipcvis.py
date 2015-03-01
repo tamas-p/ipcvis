@@ -36,7 +36,7 @@ LOG = logging.getLogger('ipcvis')
 
 #--------------------------------------------------------------------------------
 
-ProcessRecord = namedtuple('ProcessRecord', 'process_name pid ppid')
+ProcessRecord = namedtuple('ProcessRecord', 'process_name pid ppid command')
 
 PROCESS_PID = 'p'
 PROCESS_LOGIN_NAME = 'L'
@@ -111,7 +111,7 @@ class Recorder(object):
 
     UNIX_CMD = "ss state established -n -xp  -o | sed -e '1d' | sed -e 's/\"//g'"
     TCP_CMD = "ss state established -n -tp  -o | sed -e '1d' | sed -e 's/\"//g' | sed -e 's/timer:([^)]*)//'"
-    PS_CMD = "ps --no-headers -e -o pid,ppid,comm"
+    PS_CMD = "ps --no-headers -e -o pid,ppid,comm,command"
     FILE_CMD = "lsof -n -P -FLuPtfinc0"
 
     def __init__(self, fn):
@@ -480,7 +480,7 @@ class Graph(object):
         node1.attr.update(label='File' + "\\n" + str(self.inodes[key]), fontsize='8', width='0.01', height='0.01', shape='note')
 
         node2 = self.mygraph.get_node(process.pid)
-        node2.attr.update(label=process.process_name + "\\n" + 'pid=' + process.pid)
+        node2.attr.update(label=process.process_name + "\\n" + 'pid=' + process.pid + "\\n" + str(process.command))
 
 
     def add_unix_edge(self, process1, process2, state_id):
@@ -490,9 +490,9 @@ class Graph(object):
         edge = self.mygraph.get_edge(process1.pid, process2.pid)
         edge.attr.update(label="(" + state_id + ")", dir='none', color='blue')
         node1 = self.mygraph.get_node(process1.pid)
-        node1.attr.update(label=process1.process_name + "\\n" + 'pid=' + process1.pid)
+        node1.attr.update(label=process1.process_name + "\\n" + 'pid=' + process1.pid + "\\n" + str(process1.command))
         node2 = self.mygraph.get_node(process2.pid)
-        node2.attr.update(label=process2.process_name + "\\n" + 'pid=' + process2.pid)
+        node2.attr.update(label=process2.process_name + "\\n" + 'pid=' + process2.pid + "\\n" + str(process2.command))
 
     def add_tcp_edge(self, process1, process2, state_id):
         '''Add unix edge to graph'''
@@ -501,12 +501,12 @@ class Graph(object):
         edge = self.mygraph.get_edge(process1.pid, process2.pid)
         edge.attr.update(label="(" + state_id + ")", dir='none', color='red')
         node1 = self.mygraph.get_node(process1.pid)
-        node1.attr.update(label=process1.process_name + "\\n" + 'pid=' + process1.pid)
+        node1.attr.update(label=process1.process_name + "\\n" + 'pid=' + process1.pid + "\\n" + str(process1.command))
         node2 = self.mygraph.get_node(process2.pid)
         if  ':' in process2.pid:
             node2.attr.update(label='remote=' + process2.pid)
         else:
-            node2.attr.update(label=process2.process_name + "\\n" + 'pid=' + process2.pid)
+            node2.attr.update(label=process2.process_name + "\\n" + 'pid=' + process2.pid + "\\n" + str(process2.command))
 
     def add_ps_edge(self, process1, process2, state_id):
         '''Add unix edge to graph'''
@@ -515,9 +515,9 @@ class Graph(object):
         edge = self.mygraph.get_edge(process1.pid, process2.pid)
         edge.attr.update(label="(" + state_id + ")", color='black')
         node1 = self.mygraph.get_node(process1.pid)
-        node1.attr.update(label=process1.process_name + "\\n" + 'pid=' + process1.pid)
+        node1.attr.update(label=process1.process_name + "\\n" + 'pid=' + process1.pid + "\\n" + str(process1.command))
         node2 = self.mygraph.get_node(process2.pid)
-        node2.attr.update(label=process2.process_name + "\\n" + 'pid=' + process2.pid)
+        node2.attr.update(label=process2.process_name + "\\n" + 'pid=' + process2.pid + "\\n" + str(process2.command))
 
     def write(self, file_name):
         '''Write out graph to disk'''
@@ -554,9 +554,9 @@ class Graph(object):
                     # let's fix that by looking up the command name from ps list
                     pid = process_map[PROCESS_PID]
                     if fulllist.has_key(pid):
-                        process = ProcessRecord(fulllist[pid].process_name, pid, None)
+                        process = ProcessRecord(fulllist[pid].process_name, pid, None, None)
                     else:
-                        process = ProcessRecord(process_map[PROCESS_NAME], pid, None)
+                        process = ProcessRecord(process_map[PROCESS_NAME], pid, None, None)
 
                 else:
 
@@ -623,7 +623,7 @@ def gen_data(inputstr, local_pos, peer_pos, users_pos):
         if not key in data:
             data[key] = []
 
-        data[key].append(ProcessRecord(local_name, local_pid, None))
+        data[key].append(ProcessRecord(local_name, local_pid, None, None))
 
     return data
 
@@ -657,8 +657,9 @@ def gen_ps_data(mystr):
         pid = line_array[pid_pos]
         ppid = line_array[ppid_pos]
         process_name = line_array[name_pos]
+        command = line_array[name_pos:]
 
-        data[pid] = ProcessRecord(process_name, pid, ppid)
+        data[pid] = ProcessRecord(process_name, pid, ppid, command)
 
     return data
 
@@ -686,7 +687,7 @@ def main():
 
     recorder = Recorder(args.file)
 
-    if len(sys.argv) == 1:
+    if not (args.record or args.load):
         if not args.noroot:
             check_root()
         recorder.record()
