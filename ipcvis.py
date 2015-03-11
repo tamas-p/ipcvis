@@ -370,7 +370,7 @@ class Graph(object):
                 process2 = value[1]
             else:
                 # Why we need this?
-                process2 = ProcessRecord(process1.process_name, process1.pid, None)
+                process2 = ProcessRecord(process1.process_name, process1.pid, None, None)
 
             # Filter out unix sockets to the very same process
             if process1.pid != process2.pid:
@@ -393,7 +393,7 @@ class Graph(object):
             if len(value) == 2:
                 process2 = value[1]
             else:
-                process2 = ProcessRecord(process1.process_name, "\"" + key + "\"", None)
+                process2 = ProcessRecord(process1.process_name, "\"" + key + "\"", None, None)
 
             # Filter out tcp sockets to the very same process
             if process1.pid != process2.pid:
