@@ -30,6 +30,8 @@ import pygraphviz as gv
 
 from collections import namedtuple
 
+#--------------------------------------------------------------------------------
+
 logging.basicConfig()
 LOG = logging.getLogger('ipcvis')
 #LOG.setLevel(logging.DEBUG)
@@ -37,6 +39,8 @@ LOG = logging.getLogger('ipcvis')
 #--------------------------------------------------------------------------------
 
 ProcessRecord = namedtuple('ProcessRecord', 'process_name pid ppid command')
+
+#--------------------------------------------------------------------------------
 
 PROCESS_PID = 'p'
 PROCESS_LOGIN_NAME = 'L'
@@ -84,7 +88,7 @@ def cmdparser():
     group.add_argument('-l', "--load", help='load', action='store_true')
     parser.add_argument('-t', '--title', help='diagram title (default: %(default)s)', default='IPC visualization')
     parser.add_argument('-f', '--file', help='record file (default: %(default)s)', default='ipcvis.ipcdump')
-    parser.add_argument('-o', '--out', help='output file for rendering (default: %(default)s)', default='ipcvis.ps')
+    parser.add_argument('-o', '--out', help='output file for rendering (default: %(default)s)', default='ipcvis.png')
 
     return parser.parse_args()
 
@@ -115,6 +119,8 @@ class Recorder(object):
     outf = file
     mypid = str(os.getpid())
     store = []
+    parsed_store = []
+    inodes = {} # inodes[inode] = filename
 
     STATE_ID_SECTION = 'state_id'
     STATE_NAME_SECTION = 'state_name'
@@ -122,6 +128,7 @@ class Recorder(object):
     UNIX_SECTION = 'unix'
     TCP_SECTION = 'tcp'
     PS_SECTION = 'ps'
+    INODES = 'inodes'
 
     UNIX_CMD = "ss state established -n -xp  -o | sed -e '1d' | sed -e 's/\"//g'"
     TCP_CMD = "ss state established -n -tp  -o | sed -e '1d' | sed -e 's/\"//g' | sed -e 's/timer:([^)]*)//'"
@@ -235,14 +242,36 @@ class Recorder(object):
             state[section] = outstr
         self.store.append(state)
 
+    def parse(self):
+        '''Parse input'''
+
+        self.parsed_store = []
+
+        for i in range(0, len(self.store), 1):
+            LOG.debug(self.store[i][Recorder.STATE_NAME_SECTION])
+
+            parsed = dict()
+            processes = gen_ps_data(self.store[i][Recorder.PS_SECTION])
+
+            parsed[Recorder.PS_SECTION] = processes
+            parsed[Recorder.FILE_SECTION], parsed[Recorder.INODES] = gen_file_data(processes, self.store[i][Recorder.FILE_SECTION])
+            parsed[Recorder.UNIX_SECTION] = gen_unix_data(processes, self.store[i][Recorder.UNIX_SECTION])
+            parsed[Recorder.TCP_SECTION] = gen_tcp_data(processes, self.store[i][Recorder.TCP_SECTION])
+
+            self.parsed_store.append(parsed)
+
 #--------------------------------------------------------------------------------
 
 class Graph(object):
     '''Create graph'''
 
     inodes = {} # inodes[inode] = filename
-
+    title = ''
+    file_name = ''
     mygraph = None
+    mymaingraph = None
+    mygraphs = []
+    MYGRAPH = 'mygraph'
 
     processes = None
     recorder = None
@@ -279,7 +308,7 @@ class Graph(object):
     </TR>
     '''
 
-    state = '''
+    state_str = '''
     <TR>
     <TD>(%d)</TD>
     <TD ALIGN="left" >%s</TD>
@@ -287,147 +316,162 @@ class Graph(object):
     '''
     post_str = '''</TABLE> >'''
 
-    def __init__(self, recorder, title):
+    def __init__(self, recorder, title, file_name):
         self.recorder = recorder
+        self.title = title
+        self.file_name = file_name
         self.mygraph = gv.AGraph(strict=False, directed=True, label=title, labelloc='t')
 
-    def visualize(self):
+    def visualize(self, index):
         '''This function visualize the store.'''
 
-        for i in range(1, len(self.recorder.store), 1):
-            LOG.debug(self.recorder.store[i][Recorder.STATE_NAME_SECTION])
+        # Maybe this shall be moved to constructor
+        self.recorder.parse()
 
-            previous = self.recorder.store[i - 1]
-            now = self.recorder.store[i]
+        self.ps_graph(index)
+        self.unix_graph(index)
+        self.file_graph(index)
+        self.tcp_graph(index)
+        self.legend()
 
-            state_id = now[Recorder.STATE_ID_SECTION].strip()
-
-            self.ps_graph(previous[Recorder.PS_SECTION], now[Recorder.PS_SECTION], state_id)
-            self.file_graph(previous[Recorder.FILE_SECTION], now[Recorder.FILE_SECTION], state_id)
-            self.unix_graph(previous[Recorder.UNIX_SECTION], now[Recorder.UNIX_SECTION], state_id)
-            self.tcp_graph(previous[Recorder.TCP_SECTION], now[Recorder.TCP_SECTION], state_id)
+    def legend(self):
+        '''Draw legend'''
 
         lgraph = self.mygraph.add_subgraph(name='LegendGraph', rank='sink')
         lgraph.add_node('Legend')
         legend = lgraph.get_node('Legend')
 
         states = ''
-        for i in range(len(self.recorder.store)):
+        for i in range(1, len(self.recorder.store)):
             value = self.recorder.store[i]
-            states = states + self.state % (i, value[Recorder.STATE_NAME_SECTION])
+            states = states + self.state_str % (i, value[Recorder.STATE_NAME_SECTION])
 
         legend.attr.update(shape='none', margin='0', label=self.pre_str + states + self.post_str)
-        return
 
-    def ps_graph(self, before, after, state_id):
+    def diff(self, parsed, section, index):
+        '''diff'''
+
+        data = {}
+        assert index > 0
+        for key, value in parsed[index][section].items():
+            processes = parsed[index][Recorder.PS_SECTION]
+            for i in range(index - 1, -1, -1):
+                if key in parsed[i][section]:
+                    continue
+                else:
+                    #LOG.debug('Element is new in state ' + str(i + 1) + ' and value is ' + str(key) + ' ' + str(processes[key]))
+                    if self.check_parent(key, processes):
+                        data[key] = (str(i + 1), value)
+                    break
+
+        return data
+
+
+    def ps_graph(self, index):
         '''Generate ps graph'''
 
-        old_processes = gen_ps_data(before)
-        self.processes = gen_ps_data(after)
-
-        data = self.diff(old_processes, self.processes)
-
-        LOG.debug(self.processes)
+        parsed = self.recorder.parsed_store
+        data = self.diff(parsed, Recorder.PS_SECTION, index)
 
         # Print edges
         for value in data.values():
-            self.add_ps_edge(self.processes[value.ppid], value, state_id)
+            state = value[0]
+            process_child = value[1]
+            processes = parsed[int(state)][Recorder.PS_SECTION]
+            process_parent = processes[process_child.ppid]
+            self.add_ps_edge2(process_parent, process_child, state)
 
-        return self.processes
-
-    def file_graph(self, before, after, state_id):
+    def file_graph(self, index):
         '''File graph generation'''
 
-        raw = dict_diff(self.gen_file_data(self.processes, before), self.gen_file_data(self.processes, after))
+        parsed = self.recorder.parsed_store
+        raw = self.diff(parsed, Recorder.FILE_SECTION, index)
         data = self.filter_files(raw)
 
         # Add edges
         for key, value in data.items():
-
-            set_value = set(value)
+            state = value[0]
+            files = value[1]
+            set_value = set(files)
             # We only draw edges between processes
             if len(set_value) > 1:
-                for process in set(value):
-                    self.add_file_edge(key, process, state_id)
+                for process in set_value:
+                    inodes = parsed[index][Recorder.INODES]
+                    processes = parsed[int(state)][Recorder.PS_SECTION]
+                    #print processes
+                    self.add_file_edge(key, inodes, processes, process, state)
 
-    def unix_graph(self, before, after, state_id):
+    def unix_graph(self, index):
         '''Generate unix graph'''
 
-        data = self.diff(gen_unix_data(before), gen_unix_data(after))
-
-        # Print edges
+        parsed = self.recorder.parsed_store
+        data = self.diff(parsed, Recorder.UNIX_SECTION, index)
 
         # This way we show only one edge beteen processes
-        final_data = set()
-        for value in data.values():
-            final_data.add(tuple(sorted(value)))
+        final_data = data
+        #final_data = set()
+        #for value in data.values():
+        #    final_data.add(tuple(sorted(value)))
 
-        for value in final_data:
-            assert len(value) == 1 or len(value) == 2
+        for key, value in final_data.items():
+            state = value[0]
+            processes = value[1]
+            #rint 'processes=', processes, 'state=', state
+            # unix socket is always between two processes or to the very same process
+            assert len(processes) == 1 or len(processes) == 2
 
-            process1 = value[0]
-            if len(value) == 2:
-                process2 = value[1]
+            process1 = processes[0]
+            if len(processes) == 2:
+                process2 = processes[1]
             else:
                 # Why we need this?
                 process2 = ProcessRecord(process1.process_name, process1.pid, None, None)
 
             # Filter out unix sockets to the very same process
             if process1.pid != process2.pid:
-                LOG.debug("    " + process1.pid + " -> " + process2.pid + " [label=\"(" + state_id + ")\"]" + "\n")
-                self.add_unix_edge(process1, process2, state_id)
+                LOG.debug("    " + process1.pid + " -> " + process2.pid + " [label=\"(" + state + ")\"]" + "\n")
+                processes = parsed[int(state)][Recorder.PS_SECTION]
+                self.add_unix_edge2(process1, process2, processes, state)
 
-
-    def tcp_graph(self, before, after, state_id):
+    def tcp_graph(self, index):
         '''Generate TCP graph'''
 
-        data = self.diff(gen_tcp_data(before), gen_tcp_data(after))
+        parsed = self.recorder.parsed_store
+        data = self.diff(parsed, Recorder.TCP_SECTION, index)
 
         # Print edges
         for key, value in data.items():
-            assert len(value) == 1 or len(value) == 2
+            state = value[0]
+            myvalue = value[1]
+            assert len(myvalue) == 1 or len(myvalue) == 2
 
-            process1 = value[0]
+            process1 = myvalue[0]
             # If the other end of the tcp sockect is a remote process (on a remote host) then we can not
             # simply create the ProcessRecord. We simply show the process name and the key of the local process:
-            if len(value) == 2:
-                process2 = value[1]
+            if len(myvalue) == 2:
+                process2 = myvalue[1]
             else:
                 process2 = ProcessRecord(process1.process_name, "\"" + key + "\"", None, None)
 
+            processes = parsed[int(state)][Recorder.PS_SECTION]
             # Filter out tcp sockets to the very same process
             if process1.pid != process2.pid:
-                self.add_tcp_edge(process1, process2, state_id)
+                self.add_tcp_edge(processes, process1, process2, state)
 
-    def diff(self, old, new):
-        '''Create diff of two dicts by their keys. Also remove anything that is
-        children of the recorder python process'''
-
-        data = {}
-        for pid, value in new.items():
-            if not pid in old:
-                # Doing the best to filter out things we are not interested in:
-                # This will filter out anything related to the recorder python process
-                # and its children
-                if self.check_parent(pid):
-                    data[pid] = value
-
-        return data
-
-    def check_parent(self, pid):
+    def check_parent(self, pid, processes):
         '''Recursive function to check parent'''
 
-        if pid not in self.processes:
+        if pid not in processes:
             return True
 
-        ppid = self.processes[pid].ppid
+        ppid = processes[pid].ppid
         if ppid == '1':
             return True
 
         if ppid == self.recorder.mypid:
             return False
 
-        return self.check_parent(ppid)
+        return self.check_parent(ppid, processes)
 
     def filter_files(self, files):
         '''Filter out any file that is connected directly or indirectly with the
@@ -438,7 +482,7 @@ class Graph(object):
 
         for inode in cpy.keys():
 
-            process_record_list = files[inode]
+            process_record_list = files[inode][1]
 
             for process_record in process_record_list:
                 if process_record.pid == self.recorder.mypid:
@@ -469,33 +513,37 @@ class Graph(object):
 
         LOG.debug("#>" + ' ' + inode + ' ' + str(data[inode]))
 
-        process_record_list = data[inode]
+        process_record_list = data[inode][1]
         for process_record in process_record_list:
             if process_record.pid == from_pid:
                 continue
 
             for i in data.keys():
-                if process_record in data[i] and not i in inodes_to_be_deleted:
+                if process_record in data[i][1] and not i in inodes_to_be_deleted:
                     inodes_to_be_deleted.append(i)
                     self.check_file(data, process_record.pid, i, inodes_to_be_deleted)
 
-    def add_file_edge(self, key, process, state_id):
+    def add_file_edge(self, key, inodes, processes, process, state_id):
         '''Add file edge to graph'''
 
         #assert not '127.0.0' in key
 
         self.mygraph.add_edge(key, process.pid)
         edge = self.mygraph.get_edge(key, process.pid)
-        if self.inodes[key][FILE_NAME].startswith(SHMEM_FILENAME):
+        if inodes[key][FILE_NAME].startswith(SHMEM_FILENAME):
             edge.attr.update(label="(" + state_id + ")", dir='none', color='purple')
         else:
             edge.attr.update(label="(" + state_id + ")", dir='none', color='green')
 
         node1 = self.mygraph.get_node(key)
-        node1.attr.update(label='File' + "\\n" + str(self.inodes[key]), fontsize='8', width='0.01', height='0.01', shape='note')
+        node1.attr.update(label='File' + "\\n" + str(inodes[key]), fontsize='8', width='0.01', height='0.01', shape='note')
 
         node2 = self.mygraph.get_node(process.pid)
-        node2.attr.update(label=process.process_name + "\\n" + 'pid=' + process.pid + "\\n" + self.processes[process.pid].command)
+        if process.pid in processes:
+            command = processes[process.pid].command
+        else:
+            command = '<empty>'
+        node2.attr.update(label=process.process_name + "\\n" + 'pid=' + process.pid + "\\n" + command)
 
     def add_unix_edge(self, process1, process2, state_id):
         '''Add unix edge to graph'''
@@ -508,19 +556,41 @@ class Graph(object):
         node2 = self.mygraph.get_node(process2.pid)
         node2.attr.update(label=process2.process_name + "\\n" + 'pid=' + process2.pid + "\\n" + self.processes[process2.pid].command)
 
-    def add_tcp_edge(self, process1, process2, state_id):
+    def add_unix_edge2(self, process1, process2, processes, state_id):
+        '''Add unix edge to graph'''
+
+        self.mygraph.add_edge(process1.pid, process2.pid)
+        edge = self.mygraph.get_edge(process1.pid, process2.pid)
+        edge.attr.update(label="(" + state_id + ")", dir='none', color='blue')
+        node1 = self.mygraph.get_node(process1.pid)
+        node1.attr.update(label=process1.process_name + "\\n" + 'pid=' + process1.pid + "\\n" + processes[process1.pid].command)
+        node2 = self.mygraph.get_node(process2.pid)
+        node2.attr.update(label=process2.process_name + "\\n" + 'pid=' + process2.pid + "\\n" + processes[process2.pid].command)
+
+    def add_tcp_edge(self, processes, process1, process2, state_id):
         '''Add unix edge to graph'''
 
         self.mygraph.add_edge(process1.pid, process2.pid)
         edge = self.mygraph.get_edge(process1.pid, process2.pid)
         edge.attr.update(label="(" + state_id + ")", dir='none', color='red')
         node1 = self.mygraph.get_node(process1.pid)
-        node1.attr.update(label=process1.process_name + "\\n" + 'pid=' + process1.pid + "\\n" + self.processes[process1.pid].command)
+        node1.attr.update(label=process1.process_name + "\\n" + 'pid=' + process1.pid + "\\n" + processes[process1.pid].command)
         node2 = self.mygraph.get_node(process2.pid)
         if  ':' in process2.pid:
             node2.attr.update(label='remote=' + process2.pid)
         else:
-            node2.attr.update(label=process2.process_name + "\\n" + 'pid=' + process2.pid + "\\n" + self.processes[process2.pid].command)
+            node2.attr.update(label=process2.process_name + "\\n" + 'pid=' + process2.pid + "\\n" + processes[process2.pid].command)
+
+    def add_ps_edge2(self, process1, process2, state_id):
+        '''Add unix edge to graph'''
+
+        self.mygraph.add_edge(process1.pid, process2.pid)
+        edge = self.mygraph.get_edge(process1.pid, process2.pid)
+        edge.attr.update(label="(" + state_id + ")", color='black')
+        node1 = self.mygraph.get_node(process1.pid)
+        node1.attr.update(label=process1.process_name + "\\n" + 'pid=' + process1.pid + "\\n" + process1.command)
+        node2 = self.mygraph.get_node(process2.pid)
+        node2.attr.update(label=process2.process_name + "\\n" + 'pid=' + process2.pid + "\\n" + process2.command)
 
     def add_ps_edge(self, process1, process2, state_id):
         '''Add unix edge to graph'''
@@ -529,20 +599,23 @@ class Graph(object):
         edge = self.mygraph.get_edge(process1.pid, process2.pid)
         edge.attr.update(label="(" + state_id + ")", color='black')
         node1 = self.mygraph.get_node(process1.pid)
-        node1.attr.update(label=process1.process_name + "\\n" + 'pid=' + process1.pid + "\\n" + self.processes[process1.pid].command)
+        node1.attr.update(label=process1.process_name + "\\n" + 'pid=' + process1.pid + "\\n")# + self.processes[process1.pid].command)
         node2 = self.mygraph.get_node(process2.pid)
-        node2.attr.update(label=process2.process_name + "\\n" + 'pid=' + process2.pid + "\\n" + self.processes[process2.pid].command)
+        node2.attr.update(label=process2.process_name + "\\n" + 'pid=' + process2.pid + "\\n")# + self.processes[process2.pid].command)
 
-    def write(self, file_name):
+    def write(self, index):
         '''Write out graph to disk'''
-        #self.mygraph.write('teszt.dot')
+
+        name = self.recorder.store[index][Recorder.STATE_NAME_SECTION].strip()
+        complete_file_name = 'out.' + str(index) + '.' + name + '.' + self.file_name
+
         try:
-            self.mygraph.draw(file_name, prog="dot")
+            self.mygraph.draw(complete_file_name, prog="dot")
         except IOError as exception:
             print_stderr(str(exception))
             exit(1)
 
-        sys.stdout.write(file_name + ' is created.\n')
+        sys.stdout.write(complete_file_name + ' is created.\n')
 
     def gen_file_data(self, fulllist, mystr):
         '''Generate file data'''
@@ -594,12 +667,61 @@ class Graph(object):
 
 #--------------------------------------------------------------------------------
 
-def gen_data(inputstr, local_pos, peer_pos, users_pos):
+def gen_file_data(processes, mystr):
+    '''Generate file data'''
+
+    data = {} # data[inode] = [ ProcessRecord(process_name, pid, ppid) ]
+    inodes = {} # inodes[inode] = {key:value}
+
+    lines = mystr.split('\n')
+    for line in lines:
+        fields = line.strip('\x00').split('\x00')
+        field_map = {}
+        for field in fields:
+            if len(field) < 2:
+                continue
+            field_map[field[0]] = field[1:]
+
+        if len(field_map) > 0:
+
+            if PROCESS_PID in field_map:
+                # Just remember we will see from here files for a new process
+                process_map = field_map
+
+                # lsof gives back the thread name instead of the command name
+                # let's fix that by looking up the command name from ps list
+                pid = process_map[PROCESS_PID]
+                if processes.has_key(pid):
+                    process = processes[pid]
+                else:
+                    process = ProcessRecord(process_map[PROCESS_NAME], pid, None, None)
+
+            else:
+
+                if (
+                        'IP' in field_map[FILE_TYPE] or
+                        'unix' in field_map[FILE_TYPE] or
+                        # /SYSV indicates shared memory we want to show
+                        ('REG' in field_map[FILE_TYPE] and not field_map[FILE_NAME].startswith(SHMEM_FILENAME)) or
+                        field_map[FILE_NAME].endswith('.so') or
+                        not INODE_NUMBER in field_map
+                    ):
+                    continue
+
+                inodes[field_map[INODE_NUMBER]] = field_map
+                if not field_map[INODE_NUMBER] in data:
+                    data[field_map[INODE_NUMBER]] = []
+
+                data[field_map[INODE_NUMBER]].append(process)
+
+    return data, inodes
+
+def gen_data(processes, inputstr, local_pos, peer_pos, users_pos):
     '''Generates data'''
 
     data = {}
-
     for line in inputstr.splitlines():
+        #print line
         line_array = line.split()
 
         if not line_array:
@@ -629,6 +751,7 @@ def gen_data(inputstr, local_pos, peer_pos, users_pos):
             n_a = u_a[0].split("((")
             local_name = n_a[1]
         else:
+            # This shows that line from 'ss' does not include information on processes
             local_pid = "-1"
             local_name = "<empty>"
 
@@ -637,21 +760,26 @@ def gen_data(inputstr, local_pos, peer_pos, users_pos):
         if not key in data:
             data[key] = []
 
-        data[key].append(ProcessRecord(local_name, local_pid, None, None))
+        if local_pid != "-1":
+            process = ProcessRecord(local_name, local_pid, processes[local_pid].ppid, processes[local_pid].command)
+        else:
+            process = ProcessRecord(local_name, local_pid, local_pid, local_name)
+
+        data[key].append(process)
 
     return data
 
 #--------------------------------------------------------------------------------
 
-def gen_tcp_data(mystr):
+def gen_tcp_data(processes, mystr):
     '''Both unix & tcp uses ss to retrive data, hence same structure - same parsing'''
-    return gen_data(mystr, 2, 3, 4)
+    return gen_data(processes, mystr, 2, 3, 4)
 
 #--------------------------------------------------------------------------------
 
-def gen_unix_data(mystr):
+def gen_unix_data(processes, mystr):
     '''Both unix & tcp uses ss to retrive data, hence same structure - same parsing'''
-    return gen_data(mystr, 4, 6, 7)
+    return gen_data(processes, mystr, 4, 6, 7)
 
 #--------------------------------------------------------------------------------
 
@@ -706,8 +834,8 @@ def main():
             check_root()
         recorder.record()
         recorder.write_to_disk()
-        graph = Graph(recorder, args.title)
-        graph.visualize()
+        graph = Graph(recorder, args.title, args.out)
+        graph.visualize(1)
         graph.write(args.out)
     else:
         if args.record:
@@ -718,9 +846,12 @@ def main():
 
         elif args.load:
             recorder.load_from_disk()
-            graph = Graph(recorder, args.title)
-            graph.visualize()
-            graph.write(args.out)
+            for i in range(1, len(recorder.store)):
+                name = recorder.store[i][Recorder.STATE_NAME_SECTION].strip()
+                graph = Graph(recorder, args.title + ' - ' + name + ' (' + str(i) + ')', args.out)
+                #graph = Graph(recorder, args.title, args.out)
+                graph.visualize(i)
+                graph.write(i)
         else:
             print_stderr('Should not get here...')
             exit(1)
