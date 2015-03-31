@@ -390,16 +390,12 @@ class Graph(object):
 
         # Add edges
         for key, value in data.items():
-            state = value[0]
             files = value[1]
             set_value = set(files)
             # We only draw edges between processes
             if len(set_value) > 1:
                 for process in set_value:
-                    inodes = parsed[index][Recorder.INODES]
-                    processes = parsed[int(state)][Recorder.PS_SECTION]
-                    #print processes
-                    self.add_file_edge(key, inodes, processes, process, state)
+                    self.add_file_edge(key, process, index)
 
     def unix_graph(self, index):
         '''Generate unix graph'''
@@ -413,10 +409,10 @@ class Graph(object):
         #for value in data.values():
         #    final_data.add(tuple(sorted(value)))
 
-        for key, value in final_data.items():
+        for value in final_data.values():
             state = value[0]
             processes = value[1]
-            #rint 'processes=', processes, 'state=', state
+            # print 'processes=', processes, 'state=', state
             # unix socket is always between two processes or to the very same process
             assert len(processes) == 1 or len(processes) == 2
 
@@ -523,26 +519,27 @@ class Graph(object):
                     inodes_to_be_deleted.append(i)
                     self.check_file(data, process_record.pid, i, inodes_to_be_deleted)
 
-    def add_file_edge(self, key, inodes, processes, process, state_id):
+    def add_file_edge(self, key, process, index):
         '''Add file edge to graph'''
 
         #assert not '127.0.0' in key
 
         self.mygraph.add_edge(key, process.pid)
         edge = self.mygraph.get_edge(key, process.pid)
+        inodes = self.recorder.parsed_store[index][Recorder.INODES]
         if inodes[key][FILE_NAME].startswith(SHMEM_FILENAME):
-            edge.attr.update(label="(" + state_id + ")", dir='none', color='purple')
+            edge.attr.update(label="(" + str(index) + ")", dir='none', color='purple')
         else:
-            edge.attr.update(label="(" + state_id + ")", dir='none', color='green')
+            edge.attr.update(label="(" + str(index) + ")", dir='none', color='green')
 
         node1 = self.mygraph.get_node(key)
         node1.attr.update(label='File' + "\\n" + str(inodes[key]), fontsize='8', width='0.01', height='0.01', shape='note')
-
-        node2 = self.mygraph.get_node(process.pid)
+        processes = self.recorder.parsed_store[index][Recorder.PS_SECTION]
         if process.pid in processes:
             command = processes[process.pid].command
         else:
             command = '<empty>'
+        node2 = self.mygraph.get_node(process.pid)
         node2.attr.update(label=process.process_name + "\\n" + 'pid=' + process.pid + "\\n" + command)
 
     def add_unix_edge(self, process1, process2, state_id):
@@ -753,7 +750,7 @@ def gen_data(processes, inputstr, local_pos, peer_pos, users_pos):
         else:
             # This shows that line from 'ss' does not include information on processes
             local_pid = "-1"
-            local_name = "<empty>"
+            local_name = "<empty>2"
 
         key = local_addr + "\\n" + peer_addr if local_addr < peer_addr else peer_addr + "\\n" + local_addr
 
