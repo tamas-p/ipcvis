@@ -1,6 +1,10 @@
 #! /usr/bin/env python
-'''ipcvis - visualize inter-process communication. Small script that is able to create
-graph of verious IPC communication channels between processes, together with their process hierarchy'''
+"""
+ipcvis - visualize inter-process communication.
+
+Small script that is able to create graph of verious IPC communication channels
+between processes, together with their process hierarchy
+"""
 
 #--------------------------------------------------------------------------------
 # ipcvis- visualize inter-process communication
@@ -60,26 +64,23 @@ SHMEM_FILENAME = '/SYSV'
 #-------------------------------------------------------------------------------
 
 def check_root():
-    '''Check if user running this script is root.'''
-
+    """Check if user running this script is root."""
     if os.geteuid() != 0:
-        msg = '''You do not have root privileges.
+        msg = """You do not have root privileges.
 Without root privileges this program is not able to retrieve all needed system details.
-Exiting...'''
+Exiting..."""
 
         exit(msg)
 
 def get_stdout(cmd):
-    '''Returns stdout of cmd.'''
-
+    """Return stdout of cmd."""
     fnull = open(os.devnull, 'w')
     pipe = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=fnull).stdout
     return pipe.read()
 
 
 def cmdparser():
-    '''Responsible for parsing command line arguments'''
-
+    """Responsible for parsing command line argument."""
     parser = argparse.ArgumentParser(description='This program records inter-process communication details and visualize them.')
     group = parser.add_mutually_exclusive_group()
     parser.add_argument('-v', '--version', help='show version information', action='store_true')
@@ -93,12 +94,11 @@ def cmdparser():
     return parser.parse_args()
 
 def print_stderr(msg):
-    '''Print out to stderr'''
+    """Print out to stderr."""
     sys.stderr.write(msg + '\n')
 
 def wrap_line(instr):
-    '''Wrap a string into several lines'''
-
+    """Wrap a string into several lines."""
     step = 50
     outstr = ''
     pos = 0
@@ -113,7 +113,8 @@ def wrap_line(instr):
 #-------------------------------------------------------------------------------
 
 class Recorder(object):
-    '''Recorder class is responsible for record status information and write it to file.'''
+
+    """Recorder class is responsible for record status information and write it to file."""
 
     file_name = ''
     outf = file
@@ -136,18 +137,20 @@ class Recorder(object):
     FILE_CMD = "lsof -n -P -FLuPtfinc0"
 
     def __init__(self, fn):
+        """Initialization."""
         self.file_name = fn
 
     def write_section(self, i, section_name, section):
-        '''Writes out one section to outf.'''
+        """Write out one section to outf."""
         self.outf.write('#### step ' + str(i) + ' ' + section_name + '\n')
         self.outf.write(section)
         self.outf.write('\n')
 
     def record(self):
-        '''Builds list that includes output of commands for each iteration.
+        """Build list that includes output of commands for each iteration.
+
         list = [ State(state_name, file_out, unix_out, tcp_out, ps_out), ... ]
-        '''
+        """
         state_name = '-initial-'
 
         iteration = 0
@@ -172,8 +175,7 @@ class Recorder(object):
                 break
 
     def write_to_disk(self):
-        '''Writes store to disk'''
-
+        """Write store to disk."""
         try:
             self.outf = open(self.file_name, 'w')
         except IOError as exception:
@@ -195,8 +197,7 @@ class Recorder(object):
         sys.stdout.write(self.file_name + ' is created.\n')
 
     def load_from_disk(self):
-        '''Loads data from disk'''
-
+        """Load data from disk."""
         outstr = ''
         section = ''
         state_number = ''
@@ -243,8 +244,7 @@ class Recorder(object):
         self.store.append(state)
 
     def parse(self):
-        '''Parse input'''
-
+        """Parse input."""
         self.parsed_store = []
 
         for i in range(0, len(self.store), 1):
@@ -263,7 +263,8 @@ class Recorder(object):
 #--------------------------------------------------------------------------------
 
 class Graph(object):
-    '''Create graph'''
+
+    """Create graph."""
 
     inodes = {} # inodes[inode] = filename
     title = ''
@@ -276,7 +277,7 @@ class Graph(object):
     processes = None
     recorder = None
 
-    pre_str = '''< <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+    pre_str = """< <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
 
     <TR>
         <TD COLSPAN="2"><B>Legend</B></TD>
@@ -306,25 +307,25 @@ class Graph(object):
         <TD>Fork</TD>
         <TD ALIGN="left" ><FONT COLOR="black">black line</FONT></TD>
     </TR>
-    '''
+    """
 
-    state_str = '''
+    state_str = """
     <TR>
     <TD>(%d)</TD>
     <TD ALIGN="left" >%s</TD>
     </TR>
-    '''
-    post_str = '''</TABLE> >'''
+    """
+    post_str = """</TABLE> >"""
 
     def __init__(self, recorder, title, file_name):
+        """Initializer."""
         self.recorder = recorder
         self.title = title
         self.file_name = file_name
         self.mygraph = gv.AGraph(strict=False, directed=True, label=title, labelloc='t')
 
     def visualize(self, index):
-        '''This function visualize the store.'''
-
+        """Visualize the store."""
         # Maybe this shall be moved to constructor
         self.recorder.parse()
 
@@ -335,8 +336,7 @@ class Graph(object):
         self.legend()
 
     def legend(self):
-        '''Draw legend'''
-
+        """Draw legend."""
         lgraph = self.mygraph.add_subgraph(name='LegendGraph', rank='sink')
         lgraph.add_node('Legend')
         legend = lgraph.get_node('Legend')
@@ -349,8 +349,7 @@ class Graph(object):
         legend.attr.update(shape='none', margin='0', label=self.pre_str + states + self.post_str)
 
     def diff(self, parsed, section, index):
-        '''diff'''
-
+        """Diff."""
         data = {}
         assert index > 0
         for key, value in parsed[index][section].items():
@@ -368,8 +367,7 @@ class Graph(object):
 
 
     def ps_graph(self, index):
-        '''Generate ps graph'''
-
+        """Generate ps graph."""
         parsed = self.recorder.parsed_store
         data = self.diff(parsed, Recorder.PS_SECTION, index)
 
@@ -382,8 +380,7 @@ class Graph(object):
             self.add_ps_edge2(process_parent, process_child, state)
 
     def file_graph(self, index):
-        '''File graph generation'''
-
+        """File graph generation."""
         parsed = self.recorder.parsed_store
         raw = self.diff(parsed, Recorder.FILE_SECTION, index)
         data = self.filter_files(raw)
@@ -398,8 +395,7 @@ class Graph(object):
                     self.add_file_edge(key, process, index)
 
     def unix_graph(self, index):
-        '''Generate unix graph'''
-
+        """Generate unix graph."""
         parsed = self.recorder.parsed_store
         data = self.diff(parsed, Recorder.UNIX_SECTION, index)
 
@@ -430,8 +426,7 @@ class Graph(object):
                 self.add_unix_edge2(process1, process2, processes, state)
 
     def tcp_graph(self, index):
-        '''Generate TCP graph'''
-
+        """Generate TCP graph."""
         parsed = self.recorder.parsed_store
         data = self.diff(parsed, Recorder.TCP_SECTION, index)
 
@@ -455,8 +450,7 @@ class Graph(object):
                 self.add_tcp_edge(processes, process1, process2, state)
 
     def check_parent(self, pid, processes):
-        '''Recursive function to check parent'''
-
+        """Recursive function to check parent."""
         if pid not in processes:
             return True
 
@@ -470,9 +464,11 @@ class Graph(object):
         return self.check_parent(ppid, processes)
 
     def filter_files(self, files):
-        '''Filter out any file that is connected directly or indirectly with the
-        recorder python process'''
+        """Filter out files.
 
+        Filter out any file that is connected directly or indirectly with the
+        recorder python process
+        """
         inodes_to_be_deleted = []
         cpy = files.copy() # To have all inodes as we will remove elements from files
 
@@ -505,8 +501,7 @@ class Graph(object):
     #                                          V
     #  {inode2}[ ProcessRecord(process_name1, pid1, ppid1), ProcessRecord(process_name3, pid3, ppid3), ... ]
     def check_file(self, data, from_pid, inode, inodes_to_be_deleted):
-        '''Check file'''
-
+        """Check file."""
         LOG.debug("#>" + ' ' + inode + ' ' + str(data[inode]))
 
         process_record_list = data[inode][1]
@@ -520,8 +515,7 @@ class Graph(object):
                     self.check_file(data, process_record.pid, i, inodes_to_be_deleted)
 
     def add_file_edge(self, key, process, index):
-        '''Add file edge to graph'''
-
+        """Add file edge to graph."""
         #assert not '127.0.0' in key
 
         self.mygraph.add_edge(key, process.pid)
@@ -543,8 +537,7 @@ class Graph(object):
         node2.attr.update(label=process.process_name + "\\n" + 'pid=' + process.pid + "\\n" + command)
 
     def add_unix_edge(self, process1, process2, state_id):
-        '''Add unix edge to graph'''
-
+        """Add unix edge to graph."""
         self.mygraph.add_edge(process1.pid, process2.pid)
         edge = self.mygraph.get_edge(process1.pid, process2.pid)
         edge.attr.update(label="(" + state_id + ")", dir='none', color='blue')
@@ -554,8 +547,7 @@ class Graph(object):
         node2.attr.update(label=process2.process_name + "\\n" + 'pid=' + process2.pid + "\\n" + self.processes[process2.pid].command)
 
     def add_unix_edge2(self, process1, process2, processes, state_id):
-        '''Add unix edge to graph'''
-
+        """Add unix edge to graph."""
         self.mygraph.add_edge(process1.pid, process2.pid)
         edge = self.mygraph.get_edge(process1.pid, process2.pid)
         edge.attr.update(label="(" + state_id + ")", dir='none', color='blue')
@@ -565,8 +557,7 @@ class Graph(object):
         node2.attr.update(label=process2.process_name + "\\n" + 'pid=' + process2.pid + "\\n" + processes[process2.pid].command)
 
     def add_tcp_edge(self, processes, process1, process2, state_id):
-        '''Add unix edge to graph'''
-
+        """Add unix edge to graph."""
         self.mygraph.add_edge(process1.pid, process2.pid)
         edge = self.mygraph.get_edge(process1.pid, process2.pid)
         edge.attr.update(label="(" + state_id + ")", dir='none', color='red')
@@ -579,8 +570,7 @@ class Graph(object):
             node2.attr.update(label=process2.process_name + "\\n" + 'pid=' + process2.pid + "\\n" + processes[process2.pid].command)
 
     def add_ps_edge2(self, process1, process2, state_id):
-        '''Add unix edge to graph'''
-
+        """Add unix edge to graph."""
         self.mygraph.add_edge(process1.pid, process2.pid)
         edge = self.mygraph.get_edge(process1.pid, process2.pid)
         edge.attr.update(label="(" + state_id + ")", color='black')
@@ -590,8 +580,7 @@ class Graph(object):
         node2.attr.update(label=process2.process_name + "\\n" + 'pid=' + process2.pid + "\\n" + process2.command)
 
     def add_ps_edge(self, process1, process2, state_id):
-        '''Add unix edge to graph'''
-
+        """Add unix edge to graph."""
         self.mygraph.add_edge(process1.pid, process2.pid)
         edge = self.mygraph.get_edge(process1.pid, process2.pid)
         edge.attr.update(label="(" + state_id + ")", color='black')
@@ -601,8 +590,7 @@ class Graph(object):
         node2.attr.update(label=process2.process_name + "\\n" + 'pid=' + process2.pid + "\\n")# + self.processes[process2.pid].command)
 
     def write(self, index):
-        '''Write out graph to disk'''
-
+        """Write out graph to disk."""
         name = self.recorder.store[index][Recorder.STATE_NAME_SECTION].strip()
         complete_file_name = 'out.' + str(index) + '.' + name + '.' + self.file_name
 
@@ -615,8 +603,7 @@ class Graph(object):
         sys.stdout.write(complete_file_name + ' is created.\n')
 
     def gen_file_data(self, fulllist, mystr):
-        '''Generate file data'''
-
+        """Generate file data."""
         data = {} # data[inode] = [ ProcessRecord(process_name, pid, ppid) ]
 
         lines = mystr.split('\n')
@@ -665,8 +652,7 @@ class Graph(object):
 #--------------------------------------------------------------------------------
 
 def gen_file_data(processes, mystr):
-    '''Generate file data'''
-
+    """Generate file data."""
     data = {} # data[inode] = [ ProcessRecord(process_name, pid, ppid) ]
     inodes = {} # inodes[inode] = {key:value}
 
@@ -714,8 +700,7 @@ def gen_file_data(processes, mystr):
     return data, inodes
 
 def gen_data(processes, inputstr, local_pos, peer_pos, users_pos):
-    '''Generates data'''
-
+    """Generate data."""
     data = {}
     for line in inputstr.splitlines():
         #print line
@@ -769,20 +754,19 @@ def gen_data(processes, inputstr, local_pos, peer_pos, users_pos):
 #--------------------------------------------------------------------------------
 
 def gen_tcp_data(processes, mystr):
-    '''Both unix & tcp uses ss to retrive data, hence same structure - same parsing'''
+    """Both unix & tcp uses ss to retrive data, hence same structure - same parsing."""
     return gen_data(processes, mystr, 2, 3, 4)
 
 #--------------------------------------------------------------------------------
 
 def gen_unix_data(processes, mystr):
-    '''Both unix & tcp uses ss to retrive data, hence same structure - same parsing'''
+    """Both unix & tcp uses ss to retrive data, hence same structure - same parsing."""
     return gen_data(processes, mystr, 4, 6, 7)
 
 #--------------------------------------------------------------------------------
 
 def gen_ps_data(mystr):
-    '''Generate ps data'''
-
+    """Generate ps data."""
     pid_pos = 0
     ppid_pos = 1
     name_pos = 2
@@ -805,8 +789,7 @@ def gen_ps_data(mystr):
 #--------------------------------------------------------------------------------
 
 def dict_diff(old, new):
-    '''Dictionary diff'''
-
+    """Dictionary diff."""
     data = {}
     for key, value in new.items():
         if not key in old:
@@ -817,8 +800,7 @@ def dict_diff(old, new):
 #--------------------------------------------------------------------------------
 
 def main():
-    '''The main function'''
-
+    """The main function."""
     args = cmdparser()
     if args.version:
         print_stderr('ipcvis v0.2')
