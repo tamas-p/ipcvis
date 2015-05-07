@@ -6,7 +6,7 @@ Small script that is able to create graph of verious IPC communication channels
 between processes, together with their process hierarchy
 """
 
-#--------------------------------------------------------------------------------
+# --------------------------------------------------------------------------------
 # ipcvis- visualize inter-process communication
 # Copyright (C) 2015 Tamas Palagyi
 #
@@ -22,7 +22,7 @@ between processes, together with their process hierarchy
 #
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
-#--------------------------------------------------------------------------------
+# --------------------------------------------------------------------------------
 
 import os
 import sys
@@ -34,17 +34,17 @@ import pygraphviz as gv
 
 from collections import namedtuple
 
-#--------------------------------------------------------------------------------
+# --------------------------------------------------------------------------------
 
 logging.basicConfig()
 LOG = logging.getLogger('ipcvis')
-#LOG.setLevel(logging.DEBUG)
+# LOG.setLevel(logging.DEBUG)
 
-#--------------------------------------------------------------------------------
+# --------------------------------------------------------------------------------
 
 ProcessRecord = namedtuple('ProcessRecord', 'process_name pid ppid command')
 
-#--------------------------------------------------------------------------------
+# --------------------------------------------------------------------------------
 
 PROCESS_PID = 'p'
 PROCESS_LOGIN_NAME = 'L'
@@ -59,9 +59,10 @@ FILE_NAME = 'n'
 
 SHMEM_FILENAME = '/SYSV'
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
 # Utilities
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
+
 
 def check_root():
     """Check if user running this script is root."""
@@ -71,6 +72,7 @@ Without root privileges this program is not able to retrieve all needed system d
 Exiting..."""
 
         exit(msg)
+
 
 def get_stdout(cmd):
     """Return stdout of cmd."""
@@ -93,9 +95,11 @@ def cmdparser():
 
     return parser.parse_args()
 
+
 def print_stderr(msg):
     """Print out to stderr."""
     sys.stderr.write(msg + '\n')
+
 
 def wrap_line(instr):
     """Wrap a string into several lines."""
@@ -110,7 +114,8 @@ def wrap_line(instr):
 
     return outstr
 
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
+
 
 class Recorder(object):
 
@@ -121,7 +126,7 @@ class Recorder(object):
     mypid = str(os.getpid())
     store = []
     parsed_store = []
-    inodes = {} # inodes[inode] = filename
+    inodes = {}  # inodes[inode] = filename
 
     STATE_ID_SECTION = 'state_id'
     STATE_NAME_SECTION = 'state_name'
@@ -260,13 +265,14 @@ class Recorder(object):
 
             self.parsed_store.append(parsed)
 
-#--------------------------------------------------------------------------------
+# --------------------------------------------------------------------------------
+
 
 class Graph(object):
 
     """Create graph."""
 
-    inodes = {} # inodes[inode] = filename
+    inodes = {}  # inodes[inode] = filename
     title = ''
     file_name = ''
     mygraph = None
@@ -358,13 +364,12 @@ class Graph(object):
                 if key in parsed[i][section]:
                     continue
                 else:
-                    #LOG.debug('Element is new in state ' + str(i + 1) + ' and value is ' + str(key) + ' ' + str(processes[key]))
+                    # LOG.debug('Element is new in state ' + str(i + 1) + ' and value is ' + str(key) + ' ' + str(processes[key]))
                     if self.check_parent(key, processes):
                         data[key] = (str(i + 1), value)
                     break
 
         return data
-
 
     def ps_graph(self, index):
         """Generate ps graph."""
@@ -401,9 +406,9 @@ class Graph(object):
 
         # This way we show only one edge beteen processes
         final_data = data
-        #final_data = set()
-        #for value in data.values():
-        #    final_data.add(tuple(sorted(value)))
+        # final_data = set()
+        # for value in data.values():
+        #     final_data.add(tuple(sorted(value)))
 
         for value in final_data.values():
             state = value[0]
@@ -470,7 +475,7 @@ class Graph(object):
         recorder python process
         """
         inodes_to_be_deleted = []
-        cpy = files.copy() # To have all inodes as we will remove elements from files
+        cpy = files.copy()  # To have all inodes as we will remove elements from files
 
         for inode in cpy.keys():
 
@@ -510,13 +515,13 @@ class Graph(object):
                 continue
 
             for i in data.keys():
-                if process_record in data[i][1] and not i in inodes_to_be_deleted:
+                if process_record in data[i][1] and i not in inodes_to_be_deleted:
                     inodes_to_be_deleted.append(i)
                     self.check_file(data, process_record.pid, i, inodes_to_be_deleted)
 
     def add_file_edge(self, key, process, index):
         """Add file edge to graph."""
-        #assert not '127.0.0' in key
+        # assert not '127.0.0' in key
 
         self.mygraph.add_edge(key, process.pid)
         edge = self.mygraph.get_edge(key, process.pid)
@@ -564,7 +569,7 @@ class Graph(object):
         node1 = self.mygraph.get_node(process1.pid)
         node1.attr.update(label=process1.process_name + "\\n" + 'pid=' + process1.pid + "\\n" + processes[process1.pid].command)
         node2 = self.mygraph.get_node(process2.pid)
-        if  ':' in process2.pid:
+        if ':' in process2.pid:
             node2.attr.update(label='remote=' + process2.pid)
         else:
             node2.attr.update(label=process2.process_name + "\\n" + 'pid=' + process2.pid + "\\n" + processes[process2.pid].command)
@@ -585,9 +590,9 @@ class Graph(object):
         edge = self.mygraph.get_edge(process1.pid, process2.pid)
         edge.attr.update(label="(" + state_id + ")", color='black')
         node1 = self.mygraph.get_node(process1.pid)
-        node1.attr.update(label=process1.process_name + "\\n" + 'pid=' + process1.pid + "\\n")# + self.processes[process1.pid].command)
+        node1.attr.update(label=process1.process_name + "\\n" + 'pid=' + process1.pid + "\\n")  # + self.processes[process1.pid].command)
         node2 = self.mygraph.get_node(process2.pid)
-        node2.attr.update(label=process2.process_name + "\\n" + 'pid=' + process2.pid + "\\n")# + self.processes[process2.pid].command)
+        node2.attr.update(label=process2.process_name + "\\n" + 'pid=' + process2.pid + "\\n")  # + self.processes[process2.pid].command)
 
     def write(self, index):
         """Write out graph to disk."""
@@ -604,7 +609,7 @@ class Graph(object):
 
     def gen_file_data(self, fulllist, mystr):
         """Generate file data."""
-        data = {} # data[inode] = [ ProcessRecord(process_name, pid, ppid) ]
+        data = {}  # data[inode] = [ ProcessRecord(process_name, pid, ppid) ]
 
         lines = mystr.split('\n')
         for line in lines:
@@ -624,7 +629,7 @@ class Graph(object):
                     # lsof gives back the thread name instead of the command name
                     # let's fix that by looking up the command name from ps list
                     pid = process_map[PROCESS_PID]
-                    if fulllist.has_key(pid):
+                    if pid in fulllist:
                         process = ProcessRecord(fulllist[pid].process_name, pid, None, None)
                     else:
                         process = ProcessRecord(process_map[PROCESS_NAME], pid, None, None)
@@ -637,8 +642,7 @@ class Graph(object):
                             # /SYSV indicates shared memory we want to show
                             ('REG' in field_map[FILE_TYPE] and not field_map[FILE_NAME].startswith(SHMEM_FILENAME)) or
                             field_map[FILE_NAME].endswith('.so') or
-                            not INODE_NUMBER in field_map
-                        ):
+                            INODE_NUMBER not in field_map):
                         continue
 
                     self.inodes[field_map[INODE_NUMBER]] = field_map
@@ -649,12 +653,13 @@ class Graph(object):
 
         return data
 
-#--------------------------------------------------------------------------------
+# --------------------------------------------------------------------------------
+
 
 def gen_file_data(processes, mystr):
     """Generate file data."""
-    data = {} # data[inode] = [ ProcessRecord(process_name, pid, ppid) ]
-    inodes = {} # inodes[inode] = {key:value}
+    data = {}  # data[inode] = [ ProcessRecord(process_name, pid, ppid) ]
+    inodes = {}  # inodes[inode] = {key:value}
 
     lines = mystr.split('\n')
     for line in lines:
@@ -674,7 +679,7 @@ def gen_file_data(processes, mystr):
                 # lsof gives back the thread name instead of the command name
                 # let's fix that by looking up the command name from ps list
                 pid = process_map[PROCESS_PID]
-                if processes.has_key(pid):
+                if pid in processes:
                     process = processes[pid]
                 else:
                     process = ProcessRecord(process_map[PROCESS_NAME], pid, None, None)
@@ -687,8 +692,7 @@ def gen_file_data(processes, mystr):
                         # /SYSV indicates shared memory we want to show
                         ('REG' in field_map[FILE_TYPE] and not field_map[FILE_NAME].startswith(SHMEM_FILENAME)) or
                         field_map[FILE_NAME].endswith('.so') or
-                        not INODE_NUMBER in field_map
-                    ):
+                        INODE_NUMBER not in field_map):
                     continue
 
                 inodes[field_map[INODE_NUMBER]] = field_map
@@ -699,11 +703,12 @@ def gen_file_data(processes, mystr):
 
     return data, inodes
 
+
 def gen_data(processes, inputstr, local_pos, peer_pos, users_pos):
     """Generate data."""
     data = {}
     for line in inputstr.splitlines():
-        #print line
+        # print line
         line_array = line.split()
 
         if not line_array:
@@ -739,7 +744,7 @@ def gen_data(processes, inputstr, local_pos, peer_pos, users_pos):
 
         key = local_addr + "\\n" + peer_addr if local_addr < peer_addr else peer_addr + "\\n" + local_addr
 
-        if not key in data:
+        if key not in data:
             data[key] = []
 
         if local_pid != "-1":
@@ -751,19 +756,22 @@ def gen_data(processes, inputstr, local_pos, peer_pos, users_pos):
 
     return data
 
-#--------------------------------------------------------------------------------
+# --------------------------------------------------------------------------------
+
 
 def gen_tcp_data(processes, mystr):
     """Both unix & tcp uses ss to retrive data, hence same structure - same parsing."""
     return gen_data(processes, mystr, 2, 3, 4)
 
-#--------------------------------------------------------------------------------
+# --------------------------------------------------------------------------------
+
 
 def gen_unix_data(processes, mystr):
     """Both unix & tcp uses ss to retrive data, hence same structure - same parsing."""
     return gen_data(processes, mystr, 4, 6, 7)
 
-#--------------------------------------------------------------------------------
+# --------------------------------------------------------------------------------
+
 
 def gen_ps_data(mystr):
     """Generate ps data."""
@@ -786,18 +794,20 @@ def gen_ps_data(mystr):
 
     return data
 
-#--------------------------------------------------------------------------------
+# --------------------------------------------------------------------------------
+
 
 def dict_diff(old, new):
     """Dictionary diff."""
     data = {}
     for key, value in new.items():
-        if not key in old:
+        if key not in old:
             data[key] = value
 
     return data
 
-#--------------------------------------------------------------------------------
+# --------------------------------------------------------------------------------
+
 
 def main():
     """The main function."""
@@ -828,14 +838,14 @@ def main():
             for i in range(1, len(recorder.store)):
                 name = recorder.store[i][Recorder.STATE_NAME_SECTION].strip()
                 graph = Graph(recorder, args.title + ' - ' + name + ' (' + str(i) + ')', args.out)
-                #graph = Graph(recorder, args.title, args.out)
+                # graph = Graph(recorder, args.title, args.out)
                 graph.visualize(i)
                 graph.write(i)
         else:
             print_stderr('Should not get here...')
             exit(1)
 
-#--------------------------------------------------------------------------------
+# --------------------------------------------------------------------------------
 
 if __name__ == "__main__":
     main()
