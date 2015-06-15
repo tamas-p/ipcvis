@@ -809,6 +809,28 @@ def dict_diff(old, new):
 # --------------------------------------------------------------------------------
 
 
+def rec(args, recorder):
+    """Record and writes states."""
+    if not args.noroot:
+        check_root()
+    recorder.record()
+    recorder.write_to_disk()
+
+# --------------------------------------------------------------------------------
+
+
+def vis(args, recorder):
+    """Visualize."""
+    for i in range(1, len(recorder.store)):
+        name = recorder.store[i][Recorder.STATE_NAME_SECTION].strip()
+        graph = Graph(recorder, args.title + ' - ' + name + ' (' + str(i) + ')', args.out)
+        # graph = Graph(recorder, args.title, args.out)
+        graph.visualize(i)
+        graph.write(i)
+
+# --------------------------------------------------------------------------------
+
+
 def main():
     """The main function."""
     args = cmdparser()
@@ -819,28 +841,16 @@ def main():
     recorder = Recorder(args.file)
 
     if not (args.record or args.load):
-        if not args.noroot:
-            check_root()
-        recorder.record()
-        recorder.write_to_disk()
-        graph = Graph(recorder, args.title, args.out)
-        graph.visualize(1)
-        graph.write(args.out)
+        # Without -r or -l args we do both record and visualize in one run.
+        rec(args, recorder)
+        vis(args, recorder)
     else:
         if args.record:
-            if not args.noroot:
-                check_root()
-            recorder.record()
-            recorder.write_to_disk()
+            rec(args, recorder)
 
         elif args.load:
             recorder.load_from_disk()
-            for i in range(1, len(recorder.store)):
-                name = recorder.store[i][Recorder.STATE_NAME_SECTION].strip()
-                graph = Graph(recorder, args.title + ' - ' + name + ' (' + str(i) + ')', args.out)
-                # graph = Graph(recorder, args.title, args.out)
-                graph.visualize(i)
-                graph.write(i)
+            vis(args, recorder)
         else:
             print_stderr('Should not get here...')
             exit(1)
