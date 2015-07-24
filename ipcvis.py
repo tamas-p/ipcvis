@@ -2,7 +2,7 @@
 """
 ipcvis - visualize inter-process communication.
 
-Small script that is able to create graph of verious IPC communication channels
+Small script that is able to create graph of various IPC communication channels
 between processes, together with their process hierarchy
 """
 
@@ -91,7 +91,8 @@ def cmdparser():
     group.add_argument('-l', "--load", help='load', action='store_true')
     parser.add_argument('-t', '--title', help='diagram title (default: %(default)s)', default='IPC visualization')
     parser.add_argument('-f', '--file', help='record file (default: %(default)s)', default='ipcvis.ipcdump')
-    parser.add_argument('-o', '--out', help='output file for rendering (default: %(default)s)', default='ipcvis.png')
+    parser.add_argument('-d', '--outdir', help='output directory for rendering (default: %(default)s)', default='ipcvis_graphs')
+    parser.add_argument('-F', '--format', help='output file format for rendering (default: %(default)s)', default='png')
 
     return parser.parse_args()
 
@@ -274,7 +275,8 @@ class Graph(object):
 
     inodes = {}  # inodes[inode] = filename
     title = ''
-    file_name = ''
+    outdir = ''
+    oformat = ''
     mygraph = None
     mymaingraph = None
     mygraphs = []
@@ -323,11 +325,12 @@ class Graph(object):
     """
     post_str = """</TABLE> >"""
 
-    def __init__(self, recorder, title, file_name):
+    def __init__(self, recorder, title, outdir, oformat):
         """Initializer."""
         self.recorder = recorder
         self.title = title
-        self.file_name = file_name
+        self.outdir = outdir
+        self.oformat = oformat
         self.mygraph = gv.AGraph(strict=False, directed=True, label=title, labelloc='t')
 
     def visualize(self, index):
@@ -598,7 +601,7 @@ class Graph(object):
     def write(self, index):
         """Write out graph to disk."""
         name = self.recorder.store[index][Recorder.STATE_NAME_SECTION].strip()
-        complete_file_name = 'out.' + str(index) + '.' + name + '.' + self.file_name
+        complete_file_name = self.outdir + '/' + str(index) + '.' + name + '.' + self.oformat
 
         try:
             self.mygraph.draw(complete_file_name, prog="dot")
@@ -822,9 +825,19 @@ def rec(args, recorder):
 
 def vis(args, recorder):
     """Visualize."""
+    try:
+        os.mkdir(args.outdir)
+    except OSError as e:
+        # print "I/O error({0}): {1}".format(e.errno, e.strerror)
+        exit('Cannot create output directory: ' + e.strerror)
+
     for i in range(1, len(recorder.store)):
         name = recorder.store[i][Recorder.STATE_NAME_SECTION].strip()
-        graph = Graph(recorder, args.title + ' - ' + name + ' (' + str(i) + ')', args.out)
+        graph = Graph(recorder,
+                      args.title + ' - ' + name + ' (' + str(i) + ')',
+                      args.outdir,
+                      args.format)
+
         # graph = Graph(recorder, args.title, args.out)
         graph.visualize(i)
         graph.write(i)
