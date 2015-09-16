@@ -83,16 +83,18 @@ def get_stdout(cmd):
 
 def cmdparser():
     """Responsible for parsing command line argument."""
-    parser = argparse.ArgumentParser(description='This program records inter-process communication details and visualize them.')
+    parser = argparse.ArgumentParser(description='''This program records inter-process communication details and visualize them.
+                                                    When neither -r nor -l arguments are specified it will record and then render
+                                                    graphs in one run.''')
     group = parser.add_mutually_exclusive_group()
     parser.add_argument('-v', '--version', help='show version information', action='store_true')
-    parser.add_argument('-n', '--noroot', help='does not check for root privileges', action='store_true')
-    group.add_argument('-r', "--record", help='record', action='store_true')
-    group.add_argument('-l', "--load", help='load', action='store_true')
+    parser.add_argument('-n', '--noroot', help='skip checking for root privileges', action='store_true')
+    group.add_argument('-r', "--record", help='records ipc status dump to a file', action='store_true')
+    group.add_argument('-l', "--load", help='load ipc status dump from a file and renders output graphs', action='store_true')
     parser.add_argument('-t', '--title', help='diagram title (default: %(default)s)', default='IPC visualization')
-    parser.add_argument('-f', '--file', help='record file (default: %(default)s)', default='ipcvis.ipcdump')
-    parser.add_argument('-d', '--outdir', help='output directory for rendering (default: %(default)s)', default='ipcvis_graphs')
+    parser.add_argument('-f', '--file', help='ipc status dump file name (default: %(default)s)', default='ipcvis.ipcdump')
     parser.add_argument('-F', '--format', help='output file format for rendering (default: %(default)s)', default='png')
+    parser.add_argument('-o', '--outdir', help='output directory for rendering (default: %(default)s)', default='ipcvis_graphs')
 
     return parser.parse_args()
 
@@ -827,9 +829,9 @@ def vis(args, recorder):
     """Visualize."""
     try:
         os.mkdir(args.outdir)
-    except OSError as e:
+    except OSError as ex:
         # print "I/O error({0}): {1}".format(e.errno, e.strerror)
-        exit('Cannot create output directory: ' + e.strerror)
+        exit('Cannot create output directory: ' + ex.strerror)
 
     for i in range(1, len(recorder.store)):
         name = recorder.store[i][Recorder.STATE_NAME_SECTION].strip()
